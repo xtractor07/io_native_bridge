@@ -18,18 +18,21 @@ class CustomModule: NSObject {
     print("Hello, \(name)!")
     resolve("Native module says hi!")
   }
+  
+  @objc(createNotificationWithTitle:message:)
+  func createNotification(title: String, message: String) {
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.body = message
+
+    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+    let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+
+    UNUserNotificationCenter.current().add(request)
+  }
+  
   // React Native will use this to determine whether to run on the main thread
   @objc static func requiresMainQueueSetup() -> Bool {
     return true
-  }
-}
-
-// Exposing the method to React Native
-@objc
-extension CustomModule {
-  @objc(exampleMethod)
-  static func exampleMethod() {
-    // Forward the call to the instance method
-    CustomModule.exampleMethod()
   }
 }

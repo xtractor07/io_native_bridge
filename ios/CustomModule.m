@@ -11,5 +11,6 @@
 
 //RCT_EXTERN_METHOD(exampleMethod)
 RCT_EXTERN_METHOD(exampleMethod:(NSString *)param resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-
+// This macro exposes the createNotification method to JavaScript
+RCT_EXTERN_METHOD(createNotificationWithTitle:(NSString *)title message:(NSString *)message)
 @end
