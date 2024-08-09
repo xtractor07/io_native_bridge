@@ -14,7 +14,7 @@ import React
 @objc(SpeechRecognitionModule)
 class SpeechRecognitionModule: RCTEventEmitter {
     
-  private var speechRecognizer: SFSpeechRecognizer?
+      private var speechRecognizer: SFSpeechRecognizer?
       private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
       private var recognitionTask: SFSpeechRecognitionTask?
       private let audioEngine = AVAudioEngine()
@@ -37,8 +37,8 @@ class SpeechRecognitionModule: RCTEventEmitter {
     }
     
     override func supportedEvents() -> [String]! {
-        return ["onSpeechRecognized", "onLogMessage", "onStateChange"]
-    }
+            return ["onSpeechRecognized", "onLogMessage", "onStateChange", "onSpeechStopped"]
+        }
     
     override func startObserving() {
         hasListeners = true
@@ -81,19 +81,25 @@ class SpeechRecognitionModule: RCTEventEmitter {
     }
     
   @objc
-  func stopListening(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
-      if audioEngine.isRunning {
-          isListeningStoppedByUser = true  // Set the flag to indicate a user-initiated stop
+      func stopListening(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+          sendLog("Stopping listening")
+          isListeningStoppedByUser = true
           audioEngine.stop()
           recognitionRequest?.endAudio()
           recognitionTask?.cancel()
+          
+          isPaused = false
+          isWaitingForKeyword = false
+          
           sendStateChange()
-          sendLog("Stopped listening")
+          
+          if hasListeners {
+              let joinedText = transcribedWords.joined(separator: " ")
+              sendEvent(withName: "onSpeechRecognized", body: ["text": joinedText])
+          }
+          
           resolve(true)
-      } else {
-          resolve(false)
       }
-  }
 
     
     @objc
@@ -220,7 +226,7 @@ class SpeechRecognitionModule: RCTEventEmitter {
           }
       }
       
-      private func finalizeUtterance() {
+  private func finalizeUtterance() {
           debounceTimer?.invalidate()
           debounceTimer = nil
           
@@ -243,6 +249,8 @@ class SpeechRecognitionModule: RCTEventEmitter {
           } else {
               if currentUtterance.last?.lowercased() == "pause" {
                   pauseListening({ _ in }, rejecter: { _, _, _ in })
+              } else if currentUtterance.contains(where: { $0.lowercased() == "stop" }) {
+                  stopListening({ _ in }, rejecter: { _, _, _ in })
               } else {
                   transcribedWords.append(contentsOf: newWords)
                   let joinedText = transcribedWords.joined(separator: " ")
