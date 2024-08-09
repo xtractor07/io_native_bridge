@@ -14,6 +14,8 @@
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
 		7699B88040F8A987B510C191 /* libPods-MyNativeModule-MyNativeModuleTests.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 19F6CBCC0A4E27FBF8BF4A61 /* libPods-MyNativeModule-MyNativeModuleTests.a */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		EA29881F2C64CE0F003A33A4 /* SpeechRecognitionModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA29881E2C64CE0F003A33A4 /* SpeechRecognitionModule.swift */; };
+		EA2988212C64CE94003A33A4 /* SpeechRecognitionModule.m in Sources */ = {isa = PBXBuildFile; fileRef = EA2988202C64CE94003A33A4 /* SpeechRecognitionModule.m */; };
 		EAE652A42B68AD67003005F4 /* CustomModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAE652A32B68AD67003005F4 /* CustomModule.swift */; };
 		EAE652A62B68AEEC003005F4 /* CustomModule.m in Sources */ = {isa = PBXBuildFile; fileRef = EAE652A52B68AEEC003005F4 /* CustomModule.m */; };
 /* End PBXBuildFile section */
@@ -45,6 +47,8 @@
 		5DCACB8F33CDC322A6C60F78 /* libPods-MyNativeModule.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-MyNativeModule.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = MyNativeModule/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		89C6BE57DB24E9ADA2F236DE /* Pods-MyNativeModule-MyNativeModuleTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MyNativeModule-MyNativeModuleTests.release.xcconfig"; path = "Target Support Files/Pods-MyNativeModule-MyNativeModuleTests/Pods-MyNativeModule-MyNativeModuleTests.release.xcconfig"; sourceTree = "<group>"; };
+		EA29881E2C64CE0F003A33A4 /* SpeechRecognitionModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognitionModule.swift; sourceTree = "<group>"; };
+		EA2988202C64CE94003A33A4 /* SpeechRecognitionModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SpeechRecognitionModule.m; sourceTree = "<group>"; };
 		EAE652A22B68AD67003005F4 /* MyNativeModule-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MyNativeModule-Bridging-Header.h"; sourceTree = "<group>"; };
 		EAE652A32B68AD67003005F4 /* CustomModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomModule.swift; sourceTree = "<group>"; };
 		EAE652A52B68AEEC003005F4 /* CustomModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CustomModule.m; sourceTree = "<group>"; };
@@ -100,6 +104,8 @@
 				EAE652A32B68AD67003005F4 /* CustomModule.swift */,
 				EAE652A22B68AD67003005F4 /* MyNativeModule-Bridging-Header.h */,
 				EAE652A52B68AEEC003005F4 /* CustomModule.m */,
+				EA29881E2C64CE0F003A33A4 /* SpeechRecognitionModule.swift */,
+				EA2988202C64CE94003A33A4 /* SpeechRecognitionModule.m */,
 			);
 			name = MyNativeModule;
 			sourceTree = "<group>";
@@ -401,7 +407,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				EAE652A42B68AD67003005F4 /* CustomModule.swift in Sources */,
+				EA2988212C64CE94003A33A4 /* SpeechRecognitionModule.m in Sources */,
 				13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */,
+				EA29881F2C64CE0F003A33A4 /* SpeechRecognitionModule.swift in Sources */,
 				EAE652A62B68AEEC003005F4 /* CustomModule.m in Sources */,
 				13B07FC11A68108700A75B9A /* main.m in Sources */,
 			);
