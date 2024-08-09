@@ -14,18 +14,22 @@ import React
 @objc(SpeechRecognitionModule)
 class SpeechRecognitionModule: RCTEventEmitter {
     
-    private var speechRecognizer: SFSpeechRecognizer?
-    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
-    private var recognitionTask: SFSpeechRecognitionTask?
-    private let audioEngine = AVAudioEngine()
-    private var hasListeners = false
-  private var isListeningStoppedByUser = false  // New flag to track if the stop was user-initiated
+  private var speechRecognizer: SFSpeechRecognizer?
+      private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+      private var recognitionTask: SFSpeechRecognitionTask?
+      private let audioEngine = AVAudioEngine()
+      private var hasListeners = false
+      private var isListeningStoppedByUser = false
 
-    
-    private var transcribedWords: [String] = []
-    private var isPaused = false
-    private var isWaitingForKeyword = false
-    private var lastProcessedText = ""
+      private var transcribedWords: [String] = []
+      private var isPaused = false
+      private var isWaitingForKeyword = false
+      private var lastProcessedText = ""
+      
+      private var debounceTimer: Timer?
+      private var currentUtterance: [String] = []
+      
+      private let commandWords = ["pause", "mark", "marc", "resume", "stop"]
     
     override init() {
         super.init()
@@ -112,127 +116,147 @@ class SpeechRecognitionModule: RCTEventEmitter {
     }
   
   @objc
-  func resumeListening(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
-      sendLog("Entering resumeListening")
-      do {
-          sendLog("Stopping current audio engine and recognition task")
-          audioEngine.stop()
-          recognitionRequest?.endAudio()
-          recognitionTask?.cancel()
-          
-          // Add a small delay before restarting
-          DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-              do {
-                  self.sendLog("Attempting to restart recording")
-                  try self.startRecording()
-                  
-                  self.isPaused = false
-                  self.isWaitingForKeyword = false
-                  
-                  self.sendLog("Sending state change")
-                  self.sendStateChange()
-                  self.sendLog("Resumed listening")
-                  
-                  if self.hasListeners {
-                      self.sendLog("Sending current transcribed text")
-                      self.sendEvent(withName: "onSpeechRecognized", body: ["text": self.transcribedWords.joined(separator: " ")])
+      func resumeListening(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+          sendLog("Entering resumeListening")
+          do {
+              sendLog("Stopping current audio engine and recognition task")
+              audioEngine.stop()
+              recognitionRequest?.endAudio()
+              recognitionTask?.cancel()
+              
+              // Add a small delay before restarting
+              DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                  do {
+                      self.sendLog("Attempting to restart recording")
+                      try self.startRecording()
+                      
+                      self.isPaused = false
+                      self.isWaitingForKeyword = false
+                      
+                      self.sendLog("Sending state change")
+                      self.sendStateChange()
+                      self.sendLog("Resumed listening")
+                      
+                      if self.hasListeners {
+                          self.sendLog("Sending current transcribed text")
+                          let joinedText = self.transcribedWords.joined(separator: " ")
+                          self.sendEvent(withName: "onSpeechRecognized", body: ["text": joinedText])
+                      }
+                      
+                      self.sendLog("resumeListening completed successfully")
+                      resolve(true)
+                  } catch {
+                      self.sendLog("Error in delayed restart: \(error.localizedDescription)")
+                      reject("ERROR_RESUME_LISTENING", "Failed to resume speech recognition: \(error.localizedDescription)", error)
                   }
-                  
-                  self.sendLog("resumeListening completed successfully")
-                  resolve(true)
-              } catch {
-                  self.sendLog("Error in delayed restart: \(error.localizedDescription)")
-                  reject("ERROR_RESUME_LISTENING", "Failed to resume speech recognition: \(error.localizedDescription)", error)
               }
+          } catch {
+              sendLog("Error in resumeListening: \(error.localizedDescription)")
+              reject("ERROR_RESUME_LISTENING", "Failed to resume speech recognition: \(error.localizedDescription)", error)
           }
-      } catch {
-          sendLog("Error in resumeListening: \(error.localizedDescription)")
-          reject("ERROR_RESUME_LISTENING", "Failed to resume speech recognition: \(error.localizedDescription)", error)
       }
-  }
 
   private func startRecording() throws {
-      recognitionTask?.cancel()
-      recognitionTask = nil
+          recognitionTask?.cancel()
+          recognitionTask = nil
 
-      let audioSession = AVAudioSession.sharedInstance()
-      try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-      try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+          let audioSession = AVAudioSession.sharedInstance()
+          try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+          try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
 
-      recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-      let inputNode = audioEngine.inputNode
-      guard let recognitionRequest = recognitionRequest else { throw NSError(domain: "E_NO_RECOGNITION_REQUEST", code: -1, userInfo: nil) }
+          recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+          let inputNode = audioEngine.inputNode
+          guard let recognitionRequest = recognitionRequest else { throw NSError(domain: "E_NO_RECOGNITION_REQUEST", code: -1, userInfo: nil) }
 
-      recognitionRequest.shouldReportPartialResults = true
+          recognitionRequest.shouldReportPartialResults = true
 
-    recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
-        var isFinal = false
+          recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+              guard let self = self else { return }
+              var isFinal = false
 
-        if let result = result {
-            let words = result.bestTranscription.formattedString.components(separatedBy: .whitespacesAndNewlines)
-            self.processRecognizedSpeech(words)  // Call the method here with the array of words
-            isFinal = result.isFinal
-        }
+              if let result = result {
+                  let words = result.bestTranscription.formattedString.components(separatedBy: .whitespacesAndNewlines)
+                  self.processRecognizedSpeech(words, isFinal: result.isFinal)
+                  isFinal = result.isFinal
+              }
 
-        if error != nil || isFinal {
-            self.audioEngine.stop()
-            inputNode.removeTap(onBus: 0)
-            self.recognitionRequest = nil
-            self.recognitionTask = nil
+              if error != nil || isFinal {
+                  self.audioEngine.stop()
+                  inputNode.removeTap(onBus: 0)
+                  self.recognitionRequest = nil
+                  self.recognitionTask = nil
 
-            if self.isPaused == false && !self.isListeningStoppedByUser {
-                self.sendLog("Attempting to restart after finalization")
-                do {
-                    try self.startRecording()
-                } catch {
-                    self.sendLog("Failed to restart recording: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
+                  if self.isPaused == false && !self.isListeningStoppedByUser {
+                      self.sendLog("Attempting to restart after finalization")
+                      do {
+                          try self.startRecording()
+                      } catch {
+                          self.sendLog("Failed to restart recording: \(error.localizedDescription)")
+                      }
+                  }
+              }
+          }
 
+          let recordingFormat = inputNode.outputFormat(forBus: 0)
+          inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, when in
+              self.recognitionRequest?.append(buffer)
+          }
 
-      let recordingFormat = inputNode.outputFormat(forBus: 0)
-      inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, when in
-          self.recognitionRequest?.append(buffer)
+          audioEngine.prepare()
+          try audioEngine.start()
+          self.sendLog("startRecording completed successfully")
       }
-
-      audioEngine.prepare()
-      try audioEngine.start()
-      self.sendLog("startRecording completed successfully")
-  }
-  
     
-  private func processRecognizedSpeech(_ words: [String]) {
-      let joinedText = words.joined(separator: " ")
-      guard joinedText != lastProcessedText else { return }
-      lastProcessedText = joinedText
-      
-      if isPaused {
-          if isWaitingForKeyword {
-              if words.contains("mark") || words.contains("marc") {
-                  isWaitingForKeyword = false
-                  sendStateChange()
-                  sendLog("Keyword detected. Waiting for 'resume' or 'stop' command")
-              }
-          } else {
-              if words.contains("resume") {
-                  resumeListening({ _ in }, rejecter: { _, _, _ in })
-              } else if words.contains("stop") {
-                  stopListening({ _ in }, rejecter: { _, _, _ in })
-              }
+  private func processRecognizedSpeech(_ words: [String], isFinal: Bool) {
+          currentUtterance = words
+          
+          debounceTimer?.invalidate()
+          debounceTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
+              self?.finalizeUtterance()
           }
-      } else {
-          if words.last == "pause" {
-              pauseListening({ _ in }, rejecter: { _, _, _ in })
-          } else {
-              transcribedWords = words
-              if hasListeners {
-                  sendEvent(withName: "onSpeechRecognized", body: ["text": joinedText])
-              }
+          
+          if isFinal {
+              finalizeUtterance()
           }
       }
-  }
+      
+      private func finalizeUtterance() {
+          debounceTimer?.invalidate()
+          debounceTimer = nil
+          
+          let newWords = currentUtterance.filter { !commandWords.contains($0.lowercased()) }
+          
+          if isPaused {
+              if isWaitingForKeyword {
+                  if currentUtterance.contains(where: { $0.lowercased() == "mark" || $0.lowercased() == "marc" }) {
+                      isWaitingForKeyword = false
+                      sendStateChange()
+                      sendLog("Keyword detected. Waiting for 'resume' or 'stop' command")
+                  }
+              } else {
+                  if currentUtterance.contains(where: { $0.lowercased() == "resume" }) {
+                      resumeListening({ _ in }, rejecter: { _, _, _ in })
+                  } else if currentUtterance.contains(where: { $0.lowercased() == "stop" }) {
+                      stopListening({ _ in }, rejecter: { _, _, _ in })
+                  }
+              }
+          } else {
+              if currentUtterance.last?.lowercased() == "pause" {
+                  pauseListening({ _ in }, rejecter: { _, _, _ in })
+              } else {
+                  transcribedWords.append(contentsOf: newWords)
+                  let joinedText = transcribedWords.joined(separator: " ")
+                  if joinedText != lastProcessedText {
+                      lastProcessedText = joinedText
+                      if hasListeners {
+                          sendEvent(withName: "onSpeechRecognized", body: ["text": joinedText])
+                      }
+                  }
+              }
+          }
+          
+          currentUtterance.removeAll()
+      }
 
     
     @objc
