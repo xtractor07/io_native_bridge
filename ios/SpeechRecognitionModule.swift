@@ -19,6 +19,8 @@ class SpeechRecognitionModule: RCTEventEmitter {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private var hasListeners = false
+  private var isListeningStoppedByUser = false  // New flag to track if the stop was user-initiated
+
     
     private var transcribedWords: [String] = []
     private var isPaused = false
@@ -74,22 +76,21 @@ class SpeechRecognitionModule: RCTEventEmitter {
         }
     }
     
-    @objc
-    func stopListening(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
-        if audioEngine.isRunning {
-            audioEngine.stop()
-            recognitionRequest?.endAudio()
-            transcribedWords.removeAll()
-            isPaused = false
-            isWaitingForKeyword = false
-            lastProcessedText = ""
-            sendStateChange()
-            sendLog("Stopped listening")
-            resolve(true)
-        } else {
-            resolve(false)
-        }
-    }
+  @objc
+  func stopListening(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+      if audioEngine.isRunning {
+          isListeningStoppedByUser = true  // Set the flag to indicate a user-initiated stop
+          audioEngine.stop()
+          recognitionRequest?.endAudio()
+          recognitionTask?.cancel()
+          sendStateChange()
+          sendLog("Stopped listening")
+          resolve(true)
+      } else {
+          resolve(false)
+      }
+  }
+
     
     @objc
     func pauseListening(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
@@ -151,87 +152,61 @@ class SpeechRecognitionModule: RCTEventEmitter {
   }
 
   private func startRecording() throws {
-      sendLog("Entering startRecording")
-      
-      if let recognitionTask = recognitionTask {
-          sendLog("Cancelling existing recognition task")
-          recognitionTask.cancel()
-          self.recognitionTask = nil
-      }
-      
-      if audioEngine.isRunning {
-          sendLog("Stopping running audio engine")
-          audioEngine.stop()
-      }
-      
-      sendLog("Removing existing tap on audio input node")
-      audioEngine.inputNode.removeTap(onBus: 0)
-      
-      sendLog("Configuring audio session")
+      recognitionTask?.cancel()
+      recognitionTask = nil
+
       let audioSession = AVAudioSession.sharedInstance()
       try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
       try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-      
-      sendLog("Creating new speech recognition request")
+
       recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
-      
-      guard let recognitionRequest = recognitionRequest else {
-          let error = NSError(domain: "SpeechRecognitionErrorDomain", code: 0, userInfo: [NSLocalizedDescriptionKey: "Unable to create recognition request"])
-          sendLog("Failed to create recognition request")
-          throw error
-      }
-      
+      let inputNode = audioEngine.inputNode
+      guard let recognitionRequest = recognitionRequest else { throw NSError(domain: "E_NO_RECOGNITION_REQUEST", code: -1, userInfo: nil) }
+
       recognitionRequest.shouldReportPartialResults = true
-      
-      sendLog("Starting new recognition task")
-      recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-          guard let self = self else { return }
-          
-          if let result = result {
-              let transcribedText = result.bestTranscription.formattedString
-              self.sendLog("Received transcription: \(transcribedText)")
-              self.processRecognizedSpeech(transcribedText)
-          }
-          
-          if let error = error {
-              self.sendLog("Error in recognition task: \(error.localizedDescription)")
-          }
-          
-          if error != nil || result?.isFinal == true {
-              self.sendLog("Finalizing recognition task")
-              self.audioEngine.stop()
-              self.audioEngine.inputNode.removeTap(onBus: 0)
-              self.recognitionRequest = nil
-              self.recognitionTask = nil
-              
-              // Attempt to restart if not paused
-              if !self.isPaused {
-                  self.sendLog("Attempting to restart after finalization")
-                  try? self.startRecording()
-              }
-          }
-      }
-      
-      sendLog("Installing tap on audio input node")
-      let recordingFormat = audioEngine.inputNode.outputFormat(forBus: 0)
-      audioEngine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+
+    recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
+        var isFinal = false
+
+        if let result = result {
+            let words = result.bestTranscription.formattedString.components(separatedBy: .whitespacesAndNewlines)
+            self.processRecognizedSpeech(words)  // Call the method here with the array of words
+            isFinal = result.isFinal
+        }
+
+        if error != nil || isFinal {
+            self.audioEngine.stop()
+            inputNode.removeTap(onBus: 0)
+            self.recognitionRequest = nil
+            self.recognitionTask = nil
+
+            if self.isPaused == false && !self.isListeningStoppedByUser {
+                self.sendLog("Attempting to restart after finalization")
+                do {
+                    try self.startRecording()
+                } catch {
+                    self.sendLog("Failed to restart recording: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+
+      let recordingFormat = inputNode.outputFormat(forBus: 0)
+      inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, when in
           self.recognitionRequest?.append(buffer)
       }
-      
-      sendLog("Preparing audio engine")
+
       audioEngine.prepare()
-      
-      sendLog("Starting audio engine")
       try audioEngine.start()
-      
-      sendLog("startRecording completed successfully")
+      self.sendLog("startRecording completed successfully")
   }
+  
     
-  private func processRecognizedSpeech(_ text: String) {
-      guard text != lastProcessedText else { return }
-      lastProcessedText = text
-      
-      let words = text.components(separatedBy: .whitespacesAndNewlines)
+  private func processRecognizedSpeech(_ words: [String]) {
+      let joinedText = words.joined(separator: " ")
+      guard joinedText != lastProcessedText else { return }
+      lastProcessedText = joinedText
       
       if isPaused {
           if isWaitingForKeyword {
@@ -253,11 +228,12 @@ class SpeechRecognitionModule: RCTEventEmitter {
           } else {
               transcribedWords = words
               if hasListeners {
-                  sendEvent(withName: "onSpeechRecognized", body: ["text": transcribedWords.joined(separator: " ")])
+                  sendEvent(withName: "onSpeechRecognized", body: ["text": joinedText])
               }
           }
       }
   }
+
     
     @objc
     override static func requiresMainQueueSetup() -> Bool {
